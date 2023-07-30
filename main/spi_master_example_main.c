@@ -15,6 +15,7 @@
 #include "esp_system.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "esp_log.h"
 #include "lcd_st7735s_roger.h"
 
 #include "pretty_effect.h"
@@ -276,6 +277,80 @@ static void display_pretty_colors(spi_device_handle_t spi)
     }
 }
 
+static void rgb_stripe(spi_device_handle_t spi)
+{
+    // one pixel buffer
+    uint16_t *lines = heap_caps_malloc(LCD_WIDTH * PARALLEL_LINES * sizeof(uint16_t), MALLOC_CAP_DMA);
+    uint16_t *dest;
+    int y;
+    dest = lines;
+    int stripeMode = 0;
+    for (int yb=0; yb<LCD_HEIGHT; yb+= PARALLEL_LINES) {
+        dest = lines;
+        for (y = 0; y < PARALLEL_LINES; y++) {
+            switch (stripeMode)
+            {
+                case 0:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        *dest++= 0xffff; // white
+                    }
+                    break;
+                case 1:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        *dest++= 0x0000; // black
+                    }
+                    break;
+                case 2:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        *dest++= 0xf800; // red
+                    }
+                    break;
+                case 3:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        *dest++= 0x07c0; // green
+                    }
+                    break;
+                case 4:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        *dest++= 0x1f; // blue
+                    }
+                    break;
+                case 5:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        *dest++= 0xffe0; // yellow
+                    }
+                    break;
+                case 6:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        *dest++= 0x07ff; // cyan
+                    }
+                    break;
+                case 7:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        *dest++= 0xf81f; // magenta
+                    }
+                    break;
+                case 8:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        int shade = (x<<5) / LCD_WIDTH;
+                        *dest++= (shade<<11) | (shade<<6) | shade; // grey
+                    }
+                    break;
+                default:
+                    for (int x=0; x < LCD_WIDTH; x++) {
+                        *dest = 0xffff;
+                    }
+                    break;
+            }
+        }
+        send_lines(spi, yb, lines);
+        send_line_finish(spi); // could do process next block of data while this is happening
+        stripeMode++;
+        if (stripeMode >= 9) 
+            stripeMode = 0;
+    }
+}
+
 void app_main(void)
 {
     esp_err_t ret;
@@ -306,11 +381,16 @@ void app_main(void)
     ret=spi_bus_add_device(LCD_HOST, &devcfg, &spi);
     ESP_ERROR_CHECK(ret);
     //Initialize the LCD
+    ESP_LOGE("lcd", "Initialising LCD");
     lcd_init(spi);
 
-    /* rgb_fade_stripes(); */
+    ESP_LOGE("lcd", "Drawing RGB stripes");
+    rgb_stripe(spi);
+    vTaskDelay(500);
 
     //Initialize the effect displayed
+    ESP_LOGE("lcd", "Animating pretty effect");
+
     ret=pretty_effect_init();
     ESP_ERROR_CHECK(ret);
 
