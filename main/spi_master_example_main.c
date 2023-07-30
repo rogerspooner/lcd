@@ -49,20 +49,13 @@ Proposed connections to ESP32
 //but less overhead for setting up / finishing transfers. Make sure 240 is dividable by this.
 #define PARALLEL_LINES 16
 
-/*
- The LCD needs a bunch of command/argument values to be initialized. They are stored in this struct.
-*/
+// The LCD needs a bunch of command/argument values to be initialized. They are stored in this struct.
 typedef struct {
     uint8_t cmd;
     uint8_t data[16];
     uint8_t databytes; //No of data in data; bit 7 INIT_CMD_DELAY_AFTER = delay after set; 0xFF INIT_CMD_END_SEQUENCE = end of cmds.
 } lcd_init_cmd_t;
 
-typedef enum {
-    LCD_TYPE_ILI = 1,
-    LCD_TYPE_ST,
-    LCD_TYPE_MAX,
-} type_lcd_t;
 
 DRAM_ATTR static const lcd_init_cmd_t st7735s_InitSequence[] = {
     { 0x01, { 0x80 }, 1 | INIT_CMD_DELAY_AFTER }, // Software reset
@@ -315,10 +308,12 @@ void app_main(void)
     //Initialize the LCD
     lcd_init(spi);
 
+    /* rgb_fade_stripes(); */
+
     //Initialize the effect displayed
     ret=pretty_effect_init();
     ESP_ERROR_CHECK(ret);
 
     //Go do nice stuff.
-    display_pretty_colors(spi);
+    display_pretty_colors(spi); // infinite loop animation
 }

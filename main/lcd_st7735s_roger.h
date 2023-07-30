@@ -11,3 +11,6 @@
 
 #define LCD_WIDTH  128
 #define LCD_HEIGHT 160
+
+#define IMAGE_W 128
+#define IMAGE_H 160

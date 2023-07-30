@@ -23,6 +23,7 @@ format if you want to use a different image file.
 #include "esp_check.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
+#include "lcd_st7735s_roger.h"
 
 //Reference the binary-included jpeg file
 extern const uint8_t image_jpg_start[] asm("_binary_image_jpg_start");
