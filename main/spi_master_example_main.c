@@ -285,6 +285,14 @@ static void rgb_stripe(spi_device_handle_t spi)
     int y;
     dest = lines;
     int stripeMode = 0;
+    /* | RGB565 | primary colours | Wrong-endian |
+       | 0xf800 | red    | 0x00f8 |
+       | 0x07e0 | green  | 0xe007 |
+       | 0x001f | blue   | 0x1f00 |
+       | 0xffe0 | yellow | 0xe0ff |
+       | 0x87ff | cyan   | 0xff87 |
+       | 0xf81f | magenta| 0x1ff8 |
+    */
     for (int yb=0; yb<LCD_HEIGHT; yb+= PARALLEL_LINES) {
         dest = lines;
         for (y = 0; y < PARALLEL_LINES; y++) {
@@ -302,38 +310,38 @@ static void rgb_stripe(spi_device_handle_t spi)
                     break;
                 case 2:
                     for (int x=0; x < LCD_WIDTH; x++) {
-                        *dest++= 0xf800; // red
+                        *dest++= 0x00f8; // red, wrong-endian RGB565
                     }
                     break;
                 case 3:
                     for (int x=0; x < LCD_WIDTH; x++) {
-                        *dest++= 0x07c0; // green
+                        *dest++= 0xe007; // green
                     }
                     break;
                 case 4:
                     for (int x=0; x < LCD_WIDTH; x++) {
-                        *dest++= 0x1f; // blue
+                        *dest++= 0x1f00; // blue
                     }
                     break;
                 case 5:
                     for (int x=0; x < LCD_WIDTH; x++) {
-                        *dest++= 0xffe0; // yellow
+                        *dest++= 0x0eff; // yellow
                     }
                     break;
                 case 6:
                     for (int x=0; x < LCD_WIDTH; x++) {
-                        *dest++= 0x07ff; // cyan
+                        *dest++= 0xff87; // cyan
                     }
                     break;
                 case 7:
                     for (int x=0; x < LCD_WIDTH; x++) {
-                        *dest++= 0xf81f; // magenta
+                        *dest++= 0x1ff8; // magenta
                     }
                     break;
                 case 8:
                     for (int x=0; x < LCD_WIDTH; x++) {
                         int shade = (x<<5) / LCD_WIDTH;
-                        *dest++= (shade<<11) | (shade<<6) | shade; // grey
+                        *dest++= (shade<<8) | shade << 3; // fade magenta
                     }
                     break;
                 default:
