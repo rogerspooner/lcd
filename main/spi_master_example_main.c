@@ -208,12 +208,13 @@ void lcd_init(spi_device_handle_t spi, int chip)
     io_conf.pull_up_en = true;
     gpio_config(&io_conf);
 
-    //Reset the display
-    gpio_set_level(PIN_NUM_RST, 0);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    gpio_set_level(PIN_NUM_RST, 1);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-
+    if (chip == PIN_CS_ST7735S) {
+        //Reset the display
+        gpio_set_level(PIN_NUM_RST, 0);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+        gpio_set_level(PIN_NUM_RST, 1);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
     // Backlight on
     gpio_set_level(PIN_NUM_BCKL, 1);
     
@@ -243,9 +244,6 @@ void lcd_init(spi_device_handle_t spi, int chip)
         }
         cmd++;
     }
-     // wait fo something to finish?
-     vTaskDelay(10); 
-
 }
 
 /* To send a set of lines we have to send a command, 2 data bytes, another command, 2 more data bytes and another command
@@ -261,6 +259,9 @@ static void send_lines(spi_device_handle_t spi, int ypos, uint16_t *linedata, in
     int x;
     //Transaction descriptors. Declared static so they're not allocated on the stack; we need this memory even when this
     //function is finished because the SPI driver needs access to it even while we're already calculating the next line.
+    
+    // This static variable doesn't work with 2 displays. Should refactor to store spi_transaction_t inside display_device_t
+    // for each display's SPI device
     static spi_transaction_t trans[6];
 
     int display_width;
@@ -329,7 +330,7 @@ static void send_line_finish(spi_device_handle_t spi)
 //Simple routine to generate some patterns and send them to the LCD. Don't expect anything too
 //impressive. Because the SPI driver handles transactions in the background, we can calculate the next line
 //while the previous one is being sent.
-static void display_pretty_colors(spi_device_handle_t spi, int chip)
+static void display_pretty_colors(spi_device_handle_t* spi, int chip)
 {
     int display_width, display_height;
     if (chip == PIN_CS_ST7735S) {
@@ -356,20 +357,21 @@ static void display_pretty_colors(spi_device_handle_t spi, int chip)
             //Calculate a line.
             pretty_effect_calc_lines(lines[calc_line], y, frame, PARALLEL_LINES, display_width, display_height);
             //Finish up the sending process of the previous line, if any
-            if (sending_line!=-1) send_line_finish(spi);
+            if (sending_line!=-1) send_line_finish(spi[0]);
             //Swap sending_line and calc_line
             sending_line=calc_line;
             calc_line=(calc_line==1)?0:1;
             //Send the line we currently calculated.
-            send_lines(spi, y, lines[sending_line], chip);
+            send_lines(spi[0], y, lines[sending_line], chip); // spi[0] is the rectangular st7735s display
             //The line set is queued up for sending now; the actual sending happens in the
             //background. We can go on to calculate the next line set as long as we do not
             //touch line[sending_line]; the SPI sending process is still reading from that.
         }
+        rgb_stripe(spi[1], PIN_CS_GC9A01, frame);
     }
 }
 
-static void rgb_stripe(spi_device_handle_t spi, int chip)
+static void rgb_stripe(spi_device_handle_t spi, int chip, int frame)
 {
     // one pixel buffer
     uint16_t *lines = heap_caps_malloc(MAX_DISPLAY_DIMENSION * PARALLEL_LINES * sizeof(uint16_t) + 16, MALLOC_CAP_DMA);
@@ -393,6 +395,7 @@ static void rgb_stripe(spi_device_handle_t spi, int chip)
        | 0x87ff | cyan   | 0xff87 |
        | 0xf81f | magenta| 0x1ff8 |
     */
+    frame &= 0x7f;
     for (int yb=0; yb<display_height; yb+= PARALLEL_LINES) {
         dest = lines;
         for (y = 0; y < PARALLEL_LINES; y++) {
@@ -424,12 +427,18 @@ static void rgb_stripe(spi_device_handle_t spi, int chip)
                     }
                     break;
                 case 5:
-                    for (int x=0; x < display_width; x++) {
+                    for (int x=0; x < frame; x++) {
                         *dest++= 0x0eff; // yellow
+                    }
+                    for (int x=frame; x < display_width; x++) {
+                        *dest++= 0x0000; // black
                     }
                     break;
                 case 6:
-                    for (int x=0; x < display_width; x++) {
+                    for (int x=0; x < frame; x++) {
+                        *dest++= 0xffff; // white
+                    }
+                    for (int x=frame; x < display_width; x++) {
                         *dest++= 0xff87; // cyan
                     }
                     break;
@@ -453,7 +462,7 @@ static void rgb_stripe(spi_device_handle_t spi, int chip)
             lines[y*display_width + y + 100 ] = 0x0000; // black diagonal stripe. Unit of storage = uint16_t
         }
         send_lines(spi, yb, lines, chip);
-        send_line_finish(spi); // could do process next block of data while this is happening
+        // send_line_finish(spi); // could do process next block of data while this is happening
         stripeMode++;
         if (stripeMode >= 9) 
             stripeMode = 0;
@@ -478,12 +487,12 @@ void app_main(void)
         .queue_size=7,                          //We want to be able to queue 7 transactions at a time
         .pre_cb=lcd_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line
     };
-    spi_device_handle_t spi_st7735s, spi_gc9a01;
+    spi_device_handle_t spi[2];
     //Initialize the SPI bus
     ret=spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO);
     ESP_ERROR_CHECK(ret);
     //Attach the LCD to the SPI bus
-    ret=spi_bus_add_device(LCD_HOST, &devcfg_st, &spi_st7735s);
+    ret=spi_bus_add_device(LCD_HOST, &devcfg_st, &spi[0]);
     ESP_ERROR_CHECK(ret);
 
     spi_device_interface_config_t devcfg_gc={
@@ -494,20 +503,21 @@ void app_main(void)
         .pre_cb=lcd_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line
     };
     ESP_LOGI("lcd", "Adding second spi_bus_add_device()");
-    ret=spi_bus_add_device(LCD_HOST, &devcfg_gc, &spi_gc9a01); // not sure how to tell the other functions which device we want to use.
+    ret=spi_bus_add_device(LCD_HOST, &devcfg_gc, &spi[1]); // not sure how to tell the other functions which device we want to use.
     ESP_ERROR_CHECK(ret);
 
     //Initialize the LCD
-    lcd_init(spi_st7735s, PIN_CS_ST7735S);
+    lcd_init(spi[0], PIN_CS_ST7735S);
     vTaskDelay(2);
-    //lcd_init(spi_gc9a01, PIN_CS_GC9A01);
+    lcd_init(spi[1], PIN_CS_GC9A01);
+    vTaskDelay(2);
 
     ESP_LOGE("lcd", "Drawing RGB stripes on rectangular LCD");
     vTaskDelay(2);
-    rgb_stripe(spi_st7735s, PIN_CS_ST7735S);
+    rgb_stripe(spi[0], PIN_CS_ST7735S, 0);
     ESP_LOGE("lcd", "Drawing RGB stripes on round LCD");
     vTaskDelay(2);
-    rgb_stripe(spi_gc9a01, PIN_CS_GC9A01);
+    rgb_stripe(spi[1], PIN_CS_GC9A01, 0);
     vTaskDelay(500);
 
     //Initialize the effect displayed
@@ -516,6 +526,6 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     //Go do nice stuff.
-    display_pretty_colors(spi_st7735s, PIN_CS_ST7735S); // infinite loop animation
+    display_pretty_colors(spi, PIN_CS_ST7735S); // infinite loop animation
     // display_pretty_colors(spi_gc9a01, PIN_CS_GC9A01); // infinite loop animation
 }
