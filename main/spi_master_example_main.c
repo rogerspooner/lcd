@@ -16,6 +16,7 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "lcd_main.h"
 #include "lcd_st7735s_roger.h"
 #include "lcd_gc9a01_roger.h"
 
@@ -217,19 +218,19 @@ void lcd_init(spi_device_handle_t spi, int chip)
     gpio_set_level(PIN_NUM_BCKL, 1);
     
     //Can't detect LCD type so assume st7735s
-    printf("Initialising LCD on CS=%d\n",chip);
+    ESP_LOGI("lcd","Initialising LCD on CS=%d\n",chip);
     
     switch (chip)
     { case PIN_CS_ST7735S:
-        printf("Initialising ST7735S LCD\n");
+        ESP_LOGI("lcd","Initialising ST7735S LCD\n");
         lcd_init_cmds = st7735s_InitSequence;
         break;
       case PIN_CS_GC9A01:
-        printf("Initialising GC9A01 LCD\n");
+        ESP_LOGI("lcd","Initialising GC9A01 LCD\n");
         lcd_init_cmds = gc9a01_InitSequence;
         break;
       default:
-        printf("Unknown LCD type\n");
+        ESP_LOGE("lcd","Unknown LCD chip %d\n",chip);
         lcd_init_cmds = st7735s_InitSequence; // wrong answer
         break;
     }
@@ -242,6 +243,9 @@ void lcd_init(spi_device_handle_t spi, int chip)
         }
         cmd++;
     }
+     // wait fo something to finish?
+     vTaskDelay(10); 
+
 }
 
 /* To send a set of lines we have to send a command, 2 data bytes, another command, 2 more data bytes and another command
@@ -368,7 +372,7 @@ static void display_pretty_colors(spi_device_handle_t spi, int chip)
 static void rgb_stripe(spi_device_handle_t spi, int chip)
 {
     // one pixel buffer
-    uint16_t *lines = heap_caps_malloc(MAX_DISPLAY_DIMENSION * PARALLEL_LINES * sizeof(uint16_t), MALLOC_CAP_DMA);
+    uint16_t *lines = heap_caps_malloc(MAX_DISPLAY_DIMENSION * PARALLEL_LINES * sizeof(uint16_t) + 16, MALLOC_CAP_DMA);
     uint16_t *dest;
     int y;
     dest = lines;
@@ -446,6 +450,7 @@ static void rgb_stripe(spi_device_handle_t spi, int chip)
                     }
                     break;
             }
+            lines[y*display_width + y + 100 ] = 0x0000; // black diagonal stripe. Unit of storage = uint16_t
         }
         send_lines(spi, yb, lines, chip);
         send_line_finish(spi); // could do process next block of data while this is happening
@@ -494,20 +499,23 @@ void app_main(void)
 
     //Initialize the LCD
     lcd_init(spi_st7735s, PIN_CS_ST7735S);
-    lcd_init(spi_gc9a01, PIN_CS_GC9A01);
+    vTaskDelay(2);
+    //lcd_init(spi_gc9a01, PIN_CS_GC9A01);
 
     ESP_LOGE("lcd", "Drawing RGB stripes on rectangular LCD");
+    vTaskDelay(2);
     rgb_stripe(spi_st7735s, PIN_CS_ST7735S);
     ESP_LOGE("lcd", "Drawing RGB stripes on round LCD");
+    vTaskDelay(2);
     rgb_stripe(spi_gc9a01, PIN_CS_GC9A01);
     vTaskDelay(500);
 
     //Initialize the effect displayed
     ESP_LOGE("lcd", "Animating pretty effect");
-
     ret=pretty_effect_init();
     ESP_ERROR_CHECK(ret);
 
     //Go do nice stuff.
     display_pretty_colors(spi_st7735s, PIN_CS_ST7735S); // infinite loop animation
+    // display_pretty_colors(spi_gc9a01, PIN_CS_GC9A01); // infinite loop animation
 }
