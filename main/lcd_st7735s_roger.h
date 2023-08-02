@@ -9,8 +9,10 @@
 #define PIN_NUM_RST  14 // Reset pin
 #define PIN_NUM_BCKL 27 // backlight
 
-#define LCD_WIDTH  128
-#define LCD_HEIGHT 160
+#define LCD_WIDTH_ST7735S  128
+#define LCD_HEIGHT_ST7735S 160
+#define MAX_DISPLAY_DIMENSION 320
+
 
 #define IMAGE_W 128
 #define IMAGE_H 160

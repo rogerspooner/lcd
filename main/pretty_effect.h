@@ -23,7 +23,7 @@ extern "C" {
  * @param frame Current frame, used for animation
  * @param linect Amount of lines to calculate
  */
-void pretty_effect_calc_lines(uint16_t *dest, int line, int frame, int linect);
+void pretty_effect_calc_lines(uint16_t *dest, int line, int frame, int linect, int display_width, int display_height);
 
 
 /**

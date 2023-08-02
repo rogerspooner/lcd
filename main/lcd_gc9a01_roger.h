@@ -1,4 +1,6 @@
 #define PIN_CS_GC9A01 13 // SPI chip select for round LCD
+#define LCD_WIDTH_GC9A01 240
+#define LCD_HEIGHT_GC9A01 240
 
 #define MADCTL_MY 0x80  ///< Bottom to top
 #define MADCTL_MX 0x40  ///< Right to left
