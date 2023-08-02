@@ -17,11 +17,12 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "lcd_st7735s_roger.h"
+#include "lcd_gc9a01_roger.h"
 
 #include "pretty_effect.h"
 
 /*
- This code displays some fancy graphics on the 320x240 LCD on an ESP-WROVER_KIT board.
+ This code displays some fancy graphics on the 128x160 LCD on an ESPWROOM board.
  This example demonstrates the use of both spi_device_transmit as well as
  spi_device_queue_trans/spi_device_get_trans_result and pre-transmit callbacks.
 
@@ -83,6 +84,65 @@ DRAM_ATTR static const lcd_init_cmd_t st7735s_InitSequence[] = {
     {0, {0}, INIT_CMD_END_SEQUENCE } // terminate this list. This is not sent.
 };
 
+/* Initialise GC9A01. Based on manufacturer's recommendation but copied from AdaFruit */
+DRAM_ATTR static const lcd_init_cmd_t gc9a01_InitSequence[] = {
+  { GC9A01A_INREGEN2, { }, 0 },
+  { 0xEB, { 0x14 }, 1 },// ?
+  { GC9A01A_INREGEN1, { }, 0} ,
+  { GC9A01A_INREGEN2, { }, 0} ,
+  { 0xEB, { 0x14 }, 1 }, // ?
+  { 0x84, { 0x40 }, 1 }, // ?
+  { 0x85, { 0xFF }, 1 }, // ?
+  { 0x86, { 0xFF }, 1 }, // ?
+  { 0x87, { 0xFF }, 1 }, // ?
+  { 0x88, { 0x0A }, 1 }, // ?
+  { 0x89, { 0x21 }, 1 }, // ?
+  { 0x8A, { 0x00 }, 1 }, // ?
+  { 0x8B, { 0x80 }, 1 }, // ?
+  { 0x8C, { 0x01 }, 1 }, // ?
+  { 0x8D, { 0x01 }, 1 }, // ?
+  { 0x8E, { 0xFF }, 1 }, // ?
+  { 0x8F, { 0xFF }, 1 }, // ?
+  { 0xB6, { 0x00, 0x00 }, 2 }, // ?
+  { GC9A01A_MADCTL, { MADCTL_MX | MADCTL_BGR }, 1 },
+  { GC9A01A_COLMOD, { 0x05 }, 1 },
+  { 0x90, { 0x08, 0x08, 0x08, 0x08}, 4}, // ?
+  { 0xBD, { 0x06 }, 1 }, // ?
+  { 0xBC, { 0x00 }, 1 }, // ?
+  { 0xFF, { 0x60, 0x01, 0x04 }, 3 }, // ?
+  { GC9A01A1_POWER2, { 0x13 }, 1 },
+  { GC9A01A1_POWER3, { 0x13 }, 1 },
+  { GC9A01A1_POWER4, { 0x22 }, 1 },
+  { 0xBE, { 0x11 }, 1 }, // ?
+  { 0xE1, { 0x10, 0x0E }, 2 }, // ?
+  { 0xDF, { 0x21, 0x0c, 0x02 }, 3 }, // ?
+  { GC9A01A_GAMMA1, { 0x45, 0x09, 0x08, 0x08, 0x26, 0x2A }, 6 },
+  { GC9A01A_GAMMA2, { 0x43, 0x70, 0x72, 0x36, 0x37, 0x6F }, 6 },
+  { GC9A01A_GAMMA3, { 0x45, 0x09, 0x08, 0x08, 0x26, 0x2A }, 6 },
+  { GC9A01A_GAMMA4, { 0x43, 0x70, 0x72, 0x36, 0x37, 0x6F }, 6 },
+  { 0xED, { 0x1B, 0x0B }, 2}, // ?
+  { 0xAE, { 0x77 }, 1 }, // ?
+  { 0xCD, { 0x63 }, 1 }, // ?
+  // Unsure what this line (from manufacturer's boilerplate code) is
+  // meant to do, but users reported issues, seems to work OK without:
+  //0x70, 9, 0x07, 0x07, 0x04, 0x0E, 0x0F, 0x09, 0x07, 0x08, 0x03, // ?
+  { GC9A01A_FRAMERATE, { 0x34 }, 1 },
+  { 0x62, { 0x18, 0x0D, 0x71, 0xED, 0x70, 0x70, // ?
+            0x18, 0x0F, 0x71, 0xEF, 0x70, 0x70 }, 12 },
+  { 0x63, { 0x18, 0x11, 0x71, 0xF1, 0x70, 0x70, // ?
+            0x18, 0x13, 0x71, 0xF3, 0x70, 0x70} , 12 },
+  { 0x64, { 0x28, 0x29, 0xF1, 0x01, 0xF1, 0x00, 0x07 }, 7 }, // ?
+  { 0x66, { 0x3C, 0x00, 0xCD, 0x67, 0x45, 0x45, 0x10, 0x00, 0x00, 0x00 }, 10 }, // ?
+  { 0x67, { 0x00, 0x3C, 0x00, 0x00, 0x00, 0x01, 0x54, 0x10, 0x32, 0x98 }, 10 }, // ?
+  { 0x74, { 0x10, 0x85, 0x80, 0x00, 0x00, 0x4E, 0x00 }, 7 }, // ?
+  { 0x98, { 0x3e, 0x07 }, 2 }, // ?
+  { GC9A01A_TEON, { }, 0 },
+  { GC9A01A_INVON, { }, 0 },
+  { GC9A01A_SLPOUT, { }, 0 | INIT_CMD_DELAY_AFTER }, // Exit sleep
+  { GC9A01A_DISPON, { }, 0 | INIT_CMD_DELAY_AFTER }, // Display on
+  { 0, { }, 0 | INIT_CMD_END_SEQUENCE }                 // End of list
+};
+
 
 /* Send a command to the LCD. Uses spi_device_polling_transmit, which waits
  * until the transfer is complete.
@@ -135,7 +195,7 @@ void lcd_spi_pre_transfer_callback(spi_transaction_t *t)
 }
 
 //Initialize the display
-void lcd_init(spi_device_handle_t spi)
+void lcd_init(spi_device_handle_t spi, int chip)
 {
     int cmd=0;
     const lcd_init_cmd_t* lcd_init_cmds;
@@ -157,9 +217,22 @@ void lcd_init(spi_device_handle_t spi)
     gpio_set_level(PIN_NUM_BCKL, 1);
     
     //Can't detect LCD type so assume st7735s
-    printf("Initialising LCD ST7735S...\n");
+    printf("Initialising LCD on CS=%d\n",chip);
     
-    lcd_init_cmds = st7735s_InitSequence;
+    switch (chip)
+    { case PIN_CS_ST7735S:
+        printf("Initialising ST7735S LCD\n");
+        lcd_init_cmds = st7735s_InitSequence;
+        break;
+      case PIN_CS_GC9A01:
+        printf("Initialising GC9A01 LCD\n");
+        lcd_init_cmds = gc9a01_InitSequence;
+        break;
+      default:
+        printf("Unknown LCD type\n");
+        lcd_init_cmds = st7735s_InitSequence; // wrong answer
+        break;
+    }
     
     while (lcd_init_cmds[cmd].databytes != INIT_CMD_END_SEQUENCE ) {
         lcd_cmd(spi, lcd_init_cmds[cmd].cmd, false);
@@ -178,7 +251,7 @@ void lcd_init(spi_device_handle_t spi)
  * sent faster (compared to calling spi_device_transmit several times), and at
  * the mean while the lines for next transactions can get calculated.
  */
-static void send_lines(spi_device_handle_t spi, int ypos, uint16_t *linedata)
+static void send_lines_st7735s(spi_device_handle_t spi, int ypos, uint16_t *linedata)
 {
     esp_err_t ret;
     int x;
@@ -245,7 +318,7 @@ static void send_line_finish(spi_device_handle_t spi)
 //Simple routine to generate some patterns and send them to the LCD. Don't expect anything too
 //impressive. Because the SPI driver handles transactions in the background, we can calculate the next line
 //while the previous one is being sent.
-static void display_pretty_colors(spi_device_handle_t spi)
+static void display_pretty_colors(spi_device_handle_t spi, int chip)
 {
     uint16_t *lines[2];
     //Allocate memory for the pixel buffers
@@ -269,7 +342,7 @@ static void display_pretty_colors(spi_device_handle_t spi)
             sending_line=calc_line;
             calc_line=(calc_line==1)?0:1;
             //Send the line we currently calculated.
-            send_lines(spi, y, lines[sending_line]);
+            send_lines_st7735s(spi, y, lines[sending_line]);
             //The line set is queued up for sending now; the actual sending happens in the
             //background. We can go on to calculate the next line set as long as we do not
             //touch line[sending_line]; the SPI sending process is still reading from that.
@@ -277,7 +350,7 @@ static void display_pretty_colors(spi_device_handle_t spi)
     }
 }
 
-static void rgb_stripe(spi_device_handle_t spi)
+static void rgb_stripe(spi_device_handle_t spi, int chip)
 {
     // one pixel buffer
     uint16_t *lines = heap_caps_malloc(LCD_WIDTH * PARALLEL_LINES * sizeof(uint16_t), MALLOC_CAP_DMA);
@@ -351,7 +424,7 @@ static void rgb_stripe(spi_device_handle_t spi)
                     break;
             }
         }
-        send_lines(spi, yb, lines);
+        send_lines_st7735s(spi, yb, lines);
         send_line_finish(spi); // could do process next block of data while this is happening
         stripeMode++;
         if (stripeMode >= 9) 
@@ -371,14 +444,10 @@ void app_main(void)
         .quadhd_io_num=-1,
         .max_transfer_sz=PARALLEL_LINES*320*2+8
     };
-    spi_device_interface_config_t devcfg={
-#ifdef CONFIG_LCD_OVERCLOCK
-        .clock_speed_hz=26*1000*1000,           //Clock out at 26 MHz
-#else
+    spi_device_interface_config_t devcfg_st={
         .clock_speed_hz=10*1000*1000,           //Clock out at 10 MHz
-#endif
         .mode=0,                                //SPI mode 0
-        .spics_io_num=PIN_NUM_CS,               //CS pin
+        .spics_io_num=PIN_CS_ST7735S,               //CS pin for rectangular LCD
         .queue_size=7,                          //We want to be able to queue 7 transactions at a time
         .pre_cb=lcd_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line
     };
@@ -386,14 +455,26 @@ void app_main(void)
     ret=spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO);
     ESP_ERROR_CHECK(ret);
     //Attach the LCD to the SPI bus
-    ret=spi_bus_add_device(LCD_HOST, &devcfg, &spi);
+    ret=spi_bus_add_device(LCD_HOST, &devcfg_st, &spi);
     ESP_ERROR_CHECK(ret);
+
+    spi_device_interface_config_t devcfg_gc={
+        .clock_speed_hz=10*1000*1000,           //Clock out at 10 MHz
+        .mode=0,                                //SPI mode 0
+        .spics_io_num=PIN_CS_GC9A01,               //CS pin for round LCD
+        .queue_size=7,                          //We want to be able to queue 7 transactions at a time
+        .pre_cb=lcd_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line
+    };
+    ESP_LOGI("lcd", "Adding second spi_bus_add_device()");
+    ret=spi_bus_add_device(LCD_HOST, &devcfg_gc, &spi); // not sure how to tell the other functions which device we want to use.
+    ESP_ERROR_CHECK(ret);
+
     //Initialize the LCD
-    ESP_LOGE("lcd", "Initialising LCD");
-    lcd_init(spi);
+    lcd_init(spi, PIN_CS_ST7735S);
+    lcd_init(spi, PIN_CS_GC9A01);
 
     ESP_LOGE("lcd", "Drawing RGB stripes");
-    rgb_stripe(spi);
+    rgb_stripe(spi, PIN_CS_ST7735S);
     vTaskDelay(500);
 
     //Initialize the effect displayed
@@ -403,5 +484,5 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     //Go do nice stuff.
-    display_pretty_colors(spi); // infinite loop animation
+    display_pretty_colors(spi, PIN_CS_ST7735S); // infinite loop animation
 }
